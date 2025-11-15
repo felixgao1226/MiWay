@@ -4,26 +4,122 @@ output: pdf_document
 date: "2025-11-13"
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r}
+df = read.csv("./Datasets/MiWay_Bus_Stops_-4490514804018385747.csv")
+head(df)
+df$District[df$District == ""] <- "UNKNOWN"
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+library(dplyr)
+library(ggplot2)
+# install.packages("dplyr")
+# install.packages("ggplot2")
+counts <- df %>%
+  group_by(District) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n))
+head(counts)
 ```
 
-## Including Plots
+```{r}
+ggplot(counts, aes(x = n, y = reorder(District, n))) +
+  geom_col(fill = "darkorange") +
+  labs(
+    title = "Number of Stops by District",
+    x = "Count",
+    y = "District"
+  ) +
+  theme_minimal()
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+unique(df$District)
+```
+
+```{r}
+access_summary <- df %>%
+  group_by(District) %>%
+  summarise(
+    accessible = sum(Accessible),
+    total = n(),
+    proportion = accessible / total
+  ) %>%
+  arrange(desc(proportion))
+
+
+```
+
+```{r}
+ggplot(access_summary, aes(x = proportion, y = reorder(District, proportion))) +
+  geom_col(fill = "steelblue") +
+  labs(
+    title = "Proportion of Accessible Stops by District",
+    x = "Proportion Accessible",
+    y = "District"
+  ) +
+  theme_minimal()
+
+
+```
+AODA (Accessibility for Ontarians with Disabilities Act) Requirements
+```{r}
+ggplot(access_summary, aes(x = proportion, y = reorder(District, proportion))) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = sprintf("%.1f%%", proportion * 100)),
+            hjust = -0.1, size = 3) +
+  xlim(0, 1.15) +
+  theme_minimal()
+```
+
+Shelter
+```{r}
+shelter_summary <- df %>%
+  group_by(District) %>%
+  summarise(
+    shelters = sum(Shelter),
+    total = n(),
+    proportion_sheltered = shelters / total
+  ) %>%
+  arrange(desc(proportion_sheltered))
+head(shelter_summary)
+
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(shelter_summary, aes(x = proportion_sheltered, 
+                            y = reorder(District, proportion_sheltered))) +
+  geom_col(fill = "#FF9933") +
+  labs(
+    title = "Proportion of Bus Stops with Shelters by District",
+    x = "Proportion Sheltered",
+    y = "District"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+ggplot(shelter_summary, aes(x = shelters, y = reorder(District, shelters))) +
+  geom_col(fill = "#F28C28") +
+  labs(
+    title = "Number of Sheltered Stops by District",
+    x = "Sheltered Stops",
+    y = "District"
+  ) +
+  theme_minimal()
+
+```
+
+
+
+
+
+
+
+
+
+
