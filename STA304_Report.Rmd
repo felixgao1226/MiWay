@@ -1,0 +1,223 @@
+---
+title: "MiWay Transit Access for UTM Students: District-Level Analysis"
+author: "MiWay"
+output: pdf_document
+date: "2025-11-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+df <- read.csv("./Datasets/MiWay_Bus_Stops_-4490514804018385747.csv")
+
+df <- df %>%
+  mutate(District = trimws(District)) %>%
+  filter(District != "", District != "UNKNOWN")
+
+utm_routes <- c("1", "44", "101", "110", "126")
+
+# Flag GO station stops in df
+df$is_GO_stop <- grepl("GO STATION", df$Stop_Description, ignore.case = TRUE)
+
+# Long form routes, carrying is_GO_stop with it
+routes_long <- df %>%
+  separate_rows(Routes_Service, sep = "/") %>%
+  mutate(Routes_Service = trimws(Routes_Service)) %>%
+  filter(Routes_Service != "")
+
+stop_level <- routes_long %>%
+  group_by(Stop_Number, District) %>%
+  summarise(
+    has_utm = any(Routes_Service %in% utm_routes),
+    .groups = "drop"
+  )
+
+# GO-serving routes
+go_routes <- routes_long %>%
+  filter(is_GO_stop) %>%
+  pull(Routes_Service) %>%
+  unique()
+
+df$is_GO_stop <- grepl("GO STATION", df$Stop_Description, ignore.case = TRUE)
+
+go_routes <- routes_long %>%
+  filter(is_GO_stop, Routes_Service != "") %>%
+  pull(Routes_Service) %>%
+  unique()
+
+counts <- df %>%
+  group_by(District) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n))
+
+access_summary <- df %>%
+  group_by(District) %>%
+  summarise(
+    accessible = sum(Accessible),
+    total      = n(),
+    proportion = accessible / total
+  ) %>%
+  arrange(desc(proportion))
+
+shelter_summary <- df %>%
+  group_by(District) %>%
+  summarise(
+    shelters             = sum(Shelter),
+    total                = n(),
+    proportion_sheltered = shelters / total
+  ) %>%
+  arrange(desc(proportion_sheltered))
+
+routes_by_district <- routes_long %>%
+  group_by(District) %>%
+  summarise(n_routes = n_distinct(Routes_Service)) %>%
+  arrange(desc(n_routes))
+
+utm_long <- routes_long %>%
+  filter(Routes_Service %in% utm_routes)
+
+district_utm <- utm_long %>%
+  group_by(District) %>%
+  summarise(
+    utm_stops           = n_distinct(Stop_Number),
+    utm_bus_occurrences = n(),
+    utm_distinct_routes = n_distinct(Routes_Service),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(utm_stops))
+
+utm_normalized <- stop_level %>%
+  group_by(District) %>%
+  summarise(
+    total_stops = n(),
+    utm_stops   = sum(has_utm),
+    utm_rate    = utm_stops / total_stops,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(utm_rate))
+
+go_by_district <- routes_long %>%
+  filter(Routes_Service %in% go_routes) %>%
+  group_by(District) %>%
+  summarise(
+    distinct_go_routes = n_distinct(Routes_Service),
+    total_go_stops     = n_distinct(Stop_Number),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(distinct_go_routes))
+
+tab_access   <- table(df$District, df$Accessible)
+chisq_access <- chisq.test(tab_access)
+
+tab_shelter   <- table(df$District, df$Shelter)
+chisq_shelter <- chisq.test(tab_shelter)
+
+tab_utm   <- table(stop_level$District, stop_level$has_utm)
+chisq_utm <- chisq.test(tab_utm)
+
+tab_go   <- table(df$District, df$is_GO_stop)
+chisq_go <- chisq.test(tab_go)
+```
+
+## Abstract
+
+Mississauga’s MiWay transit system plays a major role in how University of Toronto Mississauga (UTM) students commute to campus. In this project, we use the City of Mississauga’s MiWay Bus Stops dataset to compare transit accessibility across districts, with a focus on direct UTM service and GO Train connectivity. We analyze 2,900+ bus stops and summarize district-level differences in accessibility, shelter coverage, route diversity, direct UTM access, and GO connectivity. For each research question, we compute counts and conditional proportions, create visual summaries, and conduct chi-square tests of association to assess whether these characteristics vary by district. We find strong evidence that accessibility, shelter availability, UTM service, and GO connectivity all differ substantially across Mississauga. Districts along Dundas Street and Mississauga Road provide the strongest direct access to UTM, while districts containing GO stations have substantially more GO-serving bus routes. These findings highlight important transit inequalities that affect where UTM students may choose to live.
+
+## Introduction
+
+Public transit availability can strongly influence how easily University of Toronto Mississauga (UTM) students can travel between home, campus, and regional transportation hubs. MiWay, the City of Mississauga’s bus network, provides local and express routes across the city, including several routes that serve UTM directly and several that connect to GO Train stations. Understanding how these routes and stops are distributed geographically is useful for students deciding where to live, and also for identifying transit gaps across districts.
+
+This project uses the City of Mississauga MiWay Bus Stops dataset, which includes one row per bus stop and provides information on each stop’s district, accessibility status, shelter availability, and the list of MiWay routes serving it. We clean the dataset by removing stops with missing or “UNKNOWN” district labels, as these correspond primarily to GO platforms or boundary/highway locations rather than residential districts. We also convert the route list into a long format so that each stop–route pair appears on its own row, enabling analysis of route diversity and direct service to UTM.
+
+Research Questions
+
+We address the following four statistical questions:
+	1.	How does MiWay stop coverage vary across districts?
+We compare the number of stops and number of distinct MiWay routes in each district.
+	2.	Does accessibility and shelter coverage differ across districts?
+We examine district-level differences in the proportion of accessible and sheltered stops.
+	3.	Which districts have the strongest direct MiWay connections to UTM?
+We identify which districts contain the most stops served by routes 1, 44, 101, 110, and 126.
+	4.	Which districts have the best MiWay connectivity to GO Train stations?
+We detect GO station platforms using stop descriptions and measure how many MiWay routes connecting to GO appear in each district.
+
+Variables and Coding Decisions
+	•	District: Categorical district name. Blank and “UNKNOWN” districts removed.
+	•	Accessible: Indicator that a stop is marked accessible.
+	•	Shelter: Indicator that a stop has a shelter.
+	•	Routes_Service: Slash-separated list of route numbers → expanded to long format.
+	•	has_utm: Stop served by at least one UTM route (1, 44, 101, 110, 126).
+	•	is_GO_stop: Stop description contains “GO STATION,” used to detect GO platforms.
+	•	utm_rate: Proportion of stops in a district that directly serve UTM.
+	•	distinct_go_routes: Number of unique MiWay routes that reach a GO station and appear in that district.
+
+Statistical Methods
+
+For each research question we compute:
+	•	Summary statistics
+(counts, conditional proportions)
+	•	Graphical summaries
+(bar charts of counts and proportions)
+	•	Statistical tests of association
+using chi-square tests between district and key outcomes
+(e.g., accessibility, shelter, UTM access, GO connectivity)
+	•	Interpretations in context
+describing what the results imply for UTM students.
+
+## Statistical Results
+
+
+### MiWay Coverage  
+```{r}
+ggplot(counts, aes(x = n, y = reorder(District, n))) +
+  geom_col(fill = "darkorange") + theme_minimal()
+```
+
+### Accessibility  
+```{r}
+ggplot(access_summary, aes(x = proportion, y = reorder(District, proportion))) +
+  geom_col(fill = "steelblue") + theme_minimal()
+```
+
+### Shelter  
+```{r}
+ggplot(shelter_summary, aes(x = proportion_sheltered, y = reorder(District, proportion_sheltered))) +
+  geom_col(fill = "#FF9933") + theme_minimal()
+```
+
+### Route Diversity  
+```{r}
+ggplot(routes_by_district, aes(x = n_routes, y = reorder(District, n_routes))) +
+  geom_col(fill = "steelblue") + theme_minimal()
+```
+
+### Direct UTM Access  
+```{r}
+ggplot(district_utm, aes(x = utm_stops, y = reorder(District, utm_stops))) +
+  geom_col(fill = "#2C7BB6") + theme_minimal()
+```
+
+### Normalized UTM Access  
+```{r}
+ggplot(utm_normalized, aes(x = utm_rate, y = reorder(District, utm_rate))) +
+  geom_col(fill = "#2C7BB6") + theme_minimal()
+```
+
+### GO Connectivity  
+```{r}
+ggplot(go_by_district, aes(x = distinct_go_routes, y = reorder(District, distinct_go_routes))) +
+  geom_col(fill = "#2C7BB6") + theme_minimal()
+```
+
+## Conclusion
+
+*Fill in…*
+
+## Appendix  
+```{r, echo=TRUE}
+# Code shown here…
+```

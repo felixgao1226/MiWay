@@ -1,5 +1,6 @@
 ---
-title: "Report"
+title: "MiWay Transit Access for UTM Students: District-Level Analysis"
+author: "Group X"
 output: pdf_document
 date: "2025-11-13"
 ---
@@ -7,7 +8,6 @@ date: "2025-11-13"
 ```{r}
 df = read.csv("./Datasets/MiWay_Bus_Stops_-4490514804018385747.csv")
 head(df)
-df$District[df$District == ""] <- "UNKNOWN"
 ```
 
 ```{r}
@@ -20,6 +20,7 @@ counts <- df %>%
   summarise(n = n()) %>%
   arrange(desc(n))
 head(counts)
+df <- df %>% filter(District != "", District != "UNKNOWN")
 ```
 
 ```{r}
@@ -88,8 +89,6 @@ head(shelter_summary)
 ```
 
 ```{r}
-library(ggplot2)
-
 ggplot(shelter_summary, aes(x = proportion_sheltered, 
                             y = reorder(District, proportion_sheltered))) +
   geom_col(fill = "#FF9933") +
@@ -104,7 +103,7 @@ ggplot(shelter_summary, aes(x = proportion_sheltered,
 
 ```{r}
 ggplot(shelter_summary, aes(x = shelters, y = reorder(District, shelters))) +
-  geom_col(fill = "#F28C28") +
+  geom_col(fill = "steelblue") +
   labs(
     title = "Number of Sheltered Stops by District",
     x = "Sheltered Stops",
@@ -122,8 +121,9 @@ library(tidyr)
 routes_long <- df %>%
   separate_rows(Routes_Service, sep = "/") %>%
   mutate(Routes_Service = trimws(Routes_Service)) %>%
-  filter(Routes_Service != "")                          
-
+  filter(Routes_Service != "") 
+unique_buses <- unique(routes_long$Routes_Service)
+unique_buses
 ```
 
 ```{r}
@@ -177,7 +177,6 @@ district_utm <- utm_long %>%
 ```
 
 ```{r}
-library(ggplot2)
 
 ggplot(district_utm, aes(x = utm_stops, y = reorder(District, utm_stops))) +
   geom_col(fill = "#2C7BB6") +
@@ -189,6 +188,102 @@ ggplot(district_utm, aes(x = utm_stops, y = reorder(District, utm_stops))) +
   theme_minimal()
 
 ```
+
+```{r}
+# One row per (Stop_Number, District, has_utm)
+stop_level <- routes_long %>%
+  group_by(Stop_Number, District) %>%
+  summarise(
+    has_utm = any(Routes_Service %in% utm_routes),
+    .groups = "drop"
+  )
+
+utm_normalized <- stop_level %>%
+  group_by(District) %>%
+  summarise(
+    total_stops = n(),
+    utm_stops   = sum(has_utm),
+    utm_rate    = utm_stops / total_stops    # THIS IS normalization
+  ) %>%
+  arrange(desc(utm_rate))
+
+
+
+```
+
+```{r}
+ggplot(utm_normalized, aes(
+    x = utm_rate,
+    y = reorder(District, utm_rate)
+)) +
+  geom_col(fill = "#2C7BB6") +
+  labs(
+    title = "Normalized Direct UTM Bus Access by District",
+    x = "Proportion of Stops Serving UTM",
+    y = "District"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+go_df = read.csv("./Datasets/GO_Transit_Stations.csv")
+stations = go_df$LANDMARKNAME
+stations
+```
+
+```{r}
+# Tag GO-station stops in the MiWay stops data
+df$is_GO_stop <- grepl("GO STATION", df$Stop_Description, ignore.case = TRUE)
+
+# Explode routes into one row per (stop, route)
+routes_long <- df %>%
+  separate_rows(Routes_Service, sep = "/") %>%
+  mutate(Routes_Service = trimws(Routes_Service))
+
+# All route numbers that serve at least one GO station stop
+go_routes <- routes_long %>%
+  filter(is_GO_stop, Routes_Service != "") %>%   # keep only GO stops + non-empty routes
+  pull(Routes_Service) %>%
+  unique()
+
+# For each (real) district, how many distinct GO-serving routes & GO-connected stops?
+go_by_district <- routes_long %>%
+  filter(
+    Routes_Service %in% go_routes,              # only routes that touch a GO station
+    District != "",                             # drop blank districts
+    District != "UNKNOWN"                       # drop UNKNOWN pseudo-district
+  ) %>%
+  group_by(District) %>%
+  summarise(
+    distinct_go_routes = n_distinct(Routes_Service),
+    total_go_stops     = n_distinct(Stop_Number),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(distinct_go_routes))
+
+```
+
+
+```{r}
+ggplot(go_by_district, aes(
+    x = distinct_go_routes,
+    y = reorder(District, distinct_go_routes)
+)) +
+  geom_col(fill = "#2C7BB6") +
+  labs(
+    title = "MiWay Route Connectivity to GO Stations by District",
+    x = "Distinct GO-Serving Bus Routes",
+    y = "District"
+  ) +
+  theme_minimal()
+
+```
+
+
+
+
 
 
 
