@@ -265,9 +265,13 @@ Each question is answered using summary statistics, bar charts, and chi-square t
 
 ## Results
 
+In this section we move from a broad picture of MiWay coverage to more specific features that matter for UTM students. We first describe how many stops and routes each district has. We then compare accessibility and shelter coverage, before turning to direct UTM service and GO Train connectivity. We finish with an overall view that combines these features into a simple transit profile for each district.
+
 ### 1. MiWay Coverage Across Districts
 
-Districts differ widely in the number of MiWay bus stops they contain. Some districts along major corridors have significantly more stops, while others have fewer. Route diversity also varies, with some districts having many distinct routes and others offering fewer options.
+The first step is to see how many MiWay stops and routes each district contains. The lollipop plot of stop counts shows large differences across the city. Districts along major corridors and near the city centre have many more stops, while some outlying districts have far fewer. This means that the basic opportunity to catch a bus is not the same everywhere.
+The second lollipop plot shows the number of distinct MiWay routes serving each district. Districts with many stops also tend to have many routes, so riders there can choose between several paths and destinations. A few districts stand out as having many stops but a more limited set of routes, which suggests these stops mostly serve a small number of lines.
+The scatterplot of routes versus stops makes this relationship clearer. Each point represents a district, and the fitted regression line slopes upward. Districts with more stops generally have more routes, which is expected, but the spread around the line shows that some districts get more route variety than others even after accounting for how many stops they have. For UTM students, this matters because a district with many stops but little route variety may still offer fewer choices for reaching campus or a GO station.
 
 ```{r, echo=FALSE}
 # Lollipop: number of stops by district
@@ -328,16 +332,14 @@ ggplot(coverage_summary,
     y = "Number of distinct routes"
   ) +
   theme_minimal(base_size = 13)
-
-
 ```
-```{r, echo=FALSE}
+```{r, echo=FALSE, results='hide'}
 lm_routes_stops <- lm(n_routes ~ n, data = coverage_summary)
 
 summary(lm_routes_stops)
 
 ```
-```{r}
+```{r, echo=FALSE, results='hide'}
 utm_with_counts <- utm_normalized %>%
   left_join(counts, by = "District")
 
@@ -361,10 +363,13 @@ ggplot(utm_with_counts,
   ) +
   theme_minimal(base_size = 13)
 ```
+We also fitted a regression of the share of stops serving UTM on the number of stops in the district. The fitted line is fairly flat, which suggests that simply having more stops does not guarantee that a large share of them serve UTM. Some districts with modest stop counts devote a large proportion of those stops to UTM routes, while others with many stops offer relatively little direct UTM service.
 
 ### 2. Accessibility and Shelter Coverage
 
-Most MiWay stops are designed so people with mobility challenges can board the bus more easily. Because of this city-wide design standard, almost every district has very high accessibility rates.
+We next look at features that affect how comfortable and usable stops are for riders. The accessibility lollipop plot shows that almost all districts have very high proportions of accessible stops. This reflects city design standards and accessibility legislation. The chi square test confirms that the proportion is not exactly the same in every district, but the differences are small compared with the overall high level of accessibility. From the perspective of an individual student, this means that basic physical access to buses is fairly consistent across the city.
+Shelter coverage tells a different story. The second lollipop plot shows the proportion of stops with shelters in each district, and the range is much wider. Some districts provide shelters at more than half of their stops, while others provide them at only a small fraction. The chi square test indicates a strong association between district and shelter presence, so where a student lives strongly influences how often they can wait under cover during bad weather.
+To compare these two features directly, the joint plot of accessible and sheltered stops shows that accessibility is clustered near the top end for every district, while shelter coverage scatters more widely. Many districts achieve high accessibility with relatively low shelter coverage. This suggests that the main inequity lies not in basic physical access but in the comfort and protection offered to riders while they wait.
 
 ```{r, echo=FALSE}
 # Lollipop: accessibility by district
@@ -469,7 +474,9 @@ theme_minimal(base_size = 13)
 
 ### 3. Direct UTM Access
 
-Direct UTM routes (1, 44, 101, 110, 126) concentrate in districts along Dundas and Mississauga Road.
+Direct MiWay routes to UTM are especially important for students who commute daily. The lollipop plot of UTM serving stop proportions shows that these routes are heavily concentrated in a subset of districts, mainly those along Dundas Street and Mississauga Road. In some districts, a large share of stops connects directly to UTM, while in many others very few stops do so.
+The stacked plot of UTM versus non UTM stops puts this into perspective. In high access districts, most stops serve at least one UTM route, so students can board near home and travel to campus without a transfer. In low access districts, almost all stops do not serve UTM, so students must transfer through a major corridor or terminal. The chi square test confirms that this pattern is not random. The probability that a given stop serves UTM depends strongly on the district.
+The scatterplot of UTM access versus shelter coverage ties these themes together. Districts in the upper right corner enjoy both a high share of UTM stops and good shelter coverage, offering both convenient and comfortable commutes. Districts in the lower left have fewer UTM serving stops and fewer shelters, which is a much less favourable situation for students. The regression line has a slight positive slope, which suggests that districts that invest more in direct UTM service also tend, on average, to provide better shelter coverage, though there is still considerable variation.
 
 ```{r, echo=FALSE}
 # Lollipop: proportion of stops serving UTM by district
@@ -513,6 +520,30 @@ ggplot(utm_share,
   ) +
   theme_minimal(base_size = 13)
 
+```
+
+```{r}
+utm_shelter <- utm_normalized %>%
+select(District, utm_rate) %>%
+left_join(
+shelter_summary %>%
+select(District, proportion_sheltered),
+by = "District"
+)
+
+ggplot(utm_shelter,
+aes(x = utm_rate,
+y = proportion_sheltered)) +
+geom_point(size = 2.8, colour = "#2C7BB6") +
+geom_smooth(method = "lm", se = TRUE, colour = "#FF9933") +
+scale_x_continuous(labels = percent_format(accuracy = 1)) +
+scale_y_continuous(labels = percent_format(accuracy = 1)) +
+labs(
+title = "Shelter Coverage versus Direct UTM Access by District",
+x = "Proportion of stops serving UTM",
+y = "Proportion of stops with shelters"
+) +
+theme_minimal(base_size = 13)
 
 ```
 
@@ -523,7 +554,9 @@ The chi-square test shows a strong association between district and whether a st
 
 ### 4. GO Train Connectivity
 
-Districts near Cooksville, Port Credit, and Meadowvale GO stations have more GO-serving routes.
+GO Train stations connect MiWay riders to the wider Greater Toronto Area. The lollipop plot of GO serving routes by district shows that only a small number of districts have many routes that serve a GO station. These districts include the areas that contain Port Credit, Cooksville, and Meadowvale GO stations. Most other districts have very few or no routes that directly access a GO platform.
+The share plot of stops at GO stations versus other stops makes this concentration even more obvious. In most districts, almost all stops are regular MiWay stops that do not serve a GO station. In the few districts that contain GO terminals, a meaningful minority of stops are GO platforms or immediately adjacent stops. The chi square test confirms that being a GO stop is highly associated with district.
+For UTM students, this means that living in a district with a GO station can significantly reduce the time and uncertainty involved in regional travel, since transferring between MiWay and GO happens in one place. Students in districts without GO terminals often need an additional transfer or a longer MiWay ride to reach regional rail.
 
 ```{r, echo=FALSE}
 # Lollipop: number of GO-serving routes by district
@@ -574,6 +607,11 @@ chisq_go
 The chi-square test finds a significant relationship between district and whether a stop is located at a GO station (p < 0.001). Only a few districts contain GO stations, so GO-connected routes are concentrated in those districts rather than being evenly distributed.
 
 ### 5. Overall Transit Profile by District
+
+Finally, we combine several features into an overall transit profile for each district. The heatmap shows, for every district, the proportion of stops that are accessible, sheltered, serving UTM, and serving GO. Darker shading indicates higher coverage. This figure makes it easy to spot districts that perform consistently well across all four indicators and those that are strong on some dimensions but weak on others. For example, some districts have high accessibility and shelter coverage but low direct UTM or GO access, while others are the opposite.
+To summarise these four measures with a single index, we construct a composite score that averages the proportions of accessible, sheltered, UTM serving, and GO serving stops in each district. The composite lollipop plot ranks districts from lowest to highest on this index. Districts at the top have a combination of good basic access, weather protection, direct UTM routes, and GO connectivity, while those at the bottom fall behind on one or more of these components.
+Taken together, these summaries show that transit opportunities for UTM students depend strongly on where they live. Some districts offer many stops, diverse routes, high shelter coverage, and strong UTM and GO connections. Others require students to rely on fewer stops, more transfers, or unsheltered waits, even though the overall city network appears dense on a map.
+
 ```{r}
 ggplot(district_profile_long,
 aes(x = feature,
@@ -593,8 +631,36 @@ theme_minimal(base_size = 13) +
 theme(
 axis.text.x = element_text(angle = 30, hjust = 1)
 )
+```
+
+```{r}
+district_profile <- district_profile %>%
+mutate(
+composite_index = (prop_accessible + prop_shelter + prop_utm + prop_go) / 4
+)
+```
+
+```{r}
+ggplot(district_profile,
+aes(x = composite_index,
+y = reorder(District, composite_index))) +
+geom_segment(aes(x = 0,
+xend = composite_index,
+yend = District),
+linewidth = 0.8,
+colour = "grey70") +
+geom_point(size = 3.5,
+colour = "#2C7BB6") +
+scale_x_continuous(labels = percent_format(accuracy = 1)) +
+labs(
+title = "Composite Transit Access Score by District",
+x = "Average proportion across access, shelters, UTM, and GO",
+y = "District"
+) +
+theme_minimal(base_size = 13)
 
 ```
+The composite score highlights a small set of districts that perform well on several indicators at once, while others lag behind on one or more dimensions of access.
 
 \newpage
 ## Conclusion
