@@ -27,123 +27,203 @@ District-Level Analysis\par}
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = FALSE,
-  message = FALSE,
-  warning = FALSE,
-  fig.width = 7,
-  fig.height = 6,
-  fig.align = "center"
+echo = FALSE,
+message = FALSE,
+warning = FALSE,
+fig.width = 7,
+fig.height = 6,
+fig.align = "center"
 )
 
 library(dplyr)
 library(ggplot2)
 library(tidyr)
+library(scales)
 
 # Load and clean data
+
 df <- read.csv("./Datasets/MiWay_Bus_Stops_-4490514804018385747.csv")
 
 df <- df %>%
-  mutate(District = trimws(District)) %>%
-  filter(District != "", District != "UNKNOWN")
+mutate(District = trimws(District)) %>%
+filter(District != "", District != "UNKNOWN")
 
 # UTM routes
+
 utm_routes <- c("1", "44", "101", "110", "126")
 
 # Flag GO station stops based on stop description
+
 df$is_GO_stop <- grepl("GO STATION", df$Stop_Description, ignore.case = TRUE)
 
 # Long routes form (one row per stop–route pair)
+
 routes_long <- df %>%
-  separate_rows(Routes_Service, sep = "/") %>%
-  mutate(Routes_Service = trimws(Routes_Service)) %>%
-  filter(Routes_Service != "")
+separate_rows(Routes_Service, sep = "/") %>%
+mutate(Routes_Service = trimws(Routes_Service)) %>%
+filter(Routes_Service != "")
 
 # Stop-level data for UTM
+
 stop_level <- routes_long %>%
-  group_by(Stop_Number, District) %>%
-  summarise(
-    has_utm = any(Routes_Service %in% utm_routes),
-    .groups = "drop"
-  )
+group_by(Stop_Number, District) %>%
+summarise(
+has_utm = any(Routes_Service %in% utm_routes),
+.groups = "drop"
+)
 
 # GO-serving routes (any route that touches a GO stop)
+
 go_routes <- df %>%
-  filter(is_GO_stop) %>%
-  separate_rows(Routes_Service, sep = "/") %>%
-  mutate(Routes_Service = trimws(Routes_Service)) %>%
-  filter(Routes_Service != "") %>%
-  pull(Routes_Service) %>%
-  unique()
+filter(is_GO_stop) %>%
+separate_rows(Routes_Service, sep = "/") %>%
+mutate(Routes_Service = trimws(Routes_Service)) %>%
+filter(Routes_Service != "") %>%
+pull(Routes_Service) %>%
+unique()
 
 # 1. Stops by district
+
 counts <- df %>%
-  group_by(District) %>%
-  summarise(n = n()) %>%
-  arrange(desc(n))
+group_by(District) %>%
+summarise(n = n()) %>%
+arrange(desc(n))
 
 # 2. Accessibility summary
+
 access_summary <- df %>%
-  group_by(District) %>%
-  summarise(
-    accessible = sum(Accessible),
-    total      = n(),
-    proportion = accessible / total
-  ) %>%
-  arrange(desc(proportion))
+group_by(District) %>%
+summarise(
+accessible = sum(Accessible),
+total      = n(),
+proportion = accessible / total
+) %>%
+arrange(desc(proportion))
 
 # 3. Shelter summary
+
 shelter_summary <- df %>%
-  group_by(District) %>%
-  summarise(
-    shelters             = sum(Shelter),
-    total                = n(),
-    proportion_sheltered = shelters / total
-  ) %>%
-  arrange(desc(proportion_sheltered))
+group_by(District) %>%
+summarise(
+shelters             = sum(Shelter),
+total                = n(),
+proportion_sheltered = shelters / total
+) %>%
+arrange(desc(proportion_sheltered))
 
 # 4. Route diversity by district
+
 routes_by_district <- routes_long %>%
-  group_by(District) %>%
-  summarise(n_routes = n_distinct(Routes_Service)) %>%
-  arrange(desc(n_routes))
+group_by(District) %>%
+summarise(n_routes = n_distinct(Routes_Service)) %>%
+arrange(desc(n_routes))
 
 # 5. Direct UTM access (raw counts)
+
 utm_long <- routes_long %>%
-  filter(Routes_Service %in% utm_routes)
+filter(Routes_Service %in% utm_routes)
 
 district_utm <- utm_long %>%
-  group_by(District) %>%
-  summarise(
-    utm_stops           = n_distinct(Stop_Number),
-    utm_bus_occurrences = n(),
-    utm_distinct_routes = n_distinct(Routes_Service),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(utm_stops))
+group_by(District) %>%
+summarise(
+utm_stops           = n_distinct(Stop_Number),
+utm_bus_occurrences = n(),
+utm_distinct_routes = n_distinct(Routes_Service),
+.groups = "drop"
+) %>%
+arrange(desc(utm_stops))
 
 # 6. Normalized UTM access (proportion of stops with UTM service)
+
 utm_normalized <- stop_level %>%
-  group_by(District) %>%
-  summarise(
-    total_stops = n(),
-    utm_stops   = sum(has_utm),
-    utm_rate    = utm_stops / total_stops,
-    .groups = "drop"
-  ) %>%
-  arrange(desc(utm_rate))
+group_by(District) %>%
+summarise(
+total_stops = n(),
+utm_stops   = sum(has_utm),
+utm_rate    = utm_stops / total_stops,
+.groups = "drop"
+) %>%
+arrange(desc(utm_rate))
 
 # 7. GO connectivity by district
+
 go_by_district <- routes_long %>%
-  filter(Routes_Service %in% go_routes) %>%
-  group_by(District) %>%
-  summarise(
-    distinct_go_routes = n_distinct(Routes_Service),
-    total_go_stops     = n_distinct(Stop_Number),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(distinct_go_routes))
+filter(Routes_Service %in% go_routes) %>%
+group_by(District) %>%
+summarise(
+distinct_go_routes = n_distinct(Routes_Service),
+total_go_stops     = n_distinct(Stop_Number),
+.groups = "drop"
+) %>%
+arrange(desc(distinct_go_routes))
+
+# 8. UTM share by district (for stacked share plot)
+
+utm_share <- stop_level %>%
+group_by(District) %>%
+summarise(
+utm      = sum(has_utm),
+non_utm  = sum(!has_utm),
+.groups  = "drop"
+) %>%
+pivot_longer(
+cols = c(utm, non_utm),
+names_to = "utm_type",
+values_to = "n"
+) %>%
+group_by(District) %>%
+mutate(prop = n / sum(n)) %>%
+ungroup() %>%
+mutate(
+utm_type = recode(
+utm_type,
+utm = "Stops serving UTM",
+non_utm = "Stops not serving UTM"
+)
+)
+
+# 9. GO share by district (for stacked share plot)
+
+go_share <- df %>%
+mutate(
+GO_type = if_else(is_GO_stop, "Stops at GO stations", "Other stops")
+) %>%
+group_by(District, GO_type) %>%
+summarise(n = n(), .groups = "drop") %>%
+group_by(District) %>%
+mutate(prop = n / sum(n)) %>%
+ungroup()
+
+# 10. District profile for heatmap
+
+district_profile <- df %>%
+group_by(District) %>%
+summarise(
+prop_accessible = mean(Accessible, na.rm = TRUE),
+prop_shelter    = mean(Shelter,    na.rm = TRUE),
+prop_utm        = mean(Stop_Number %in% stop_level$Stop_Number[stop_level$has_utm], na.rm = TRUE),
+prop_go         = mean(is_GO_stop, na.rm = TRUE),
+.groups = "drop"
+)
+
+district_profile_long <- district_profile %>%
+pivot_longer(
+cols = starts_with("prop_"),
+names_to = "feature",
+values_to = "value"
+) %>%
+mutate(
+feature = recode(
+feature,
+prop_accessible = "Accessible stops",
+prop_shelter    = "Sheltered stops",
+prop_utm        = "Stops serving UTM",
+prop_go         = "Stops serving GO"
+)
+)
 
 # Chi-square tests
+
 tab_access   <- table(df$District, df$Accessible)
 chisq_access <- chisq.test(tab_access)
 
@@ -155,6 +235,8 @@ chisq_utm <- chisq.test(tab_utm)
 
 tab_go   <- table(df$District, df$is_GO_stop)
 chisq_go <- chisq.test(tab_go)
+
+
 ```
 
 
@@ -188,28 +270,96 @@ Each question is answered using summary statistics, bar charts, and chi-square t
 Districts differ widely in the number of MiWay bus stops they contain. Some districts along major corridors have significantly more stops, while others have fewer. Route diversity also varies, with some districts having many distinct routes and others offering fewer options.
 
 ```{r, echo=FALSE}
-library(dplyr)
-library(ggplot2)
-library(tidyr)
-ggplot(counts, aes(x = n, y = reorder(District, n))) +
-  geom_col(fill = "darkorange") + theme_minimal() + 
-  labs(
-    title = "Number of MiWay Stops by District",
-    x = "Number of Stops",
-    y = "District"
-  ) +
-  theme_minimal()
+# Lollipop: number of stops by district
+
+ggplot(counts,
+aes(x = n,
+y = reorder(District, n))) +
+geom_segment(aes(x = 0,
+xend = n,
+yend = District),
+linewidth = 0.8,
+colour = "grey70") +
+geom_point(size = 3.5,
+colour = "#FF9933") +
+labs(
+title = "Number of MiWay Stops by District",
+x = "Number of stops",
+y = "District"
+) +
+theme_minimal(base_size = 13)
+
 ```
 
 ```{r, echo=FALSE}
-ggplot(routes_by_district, aes(x = n_routes, y = reorder(District, n_routes))) +
-  geom_col(fill = "steelblue") + theme_minimal() + 
+# Lollipop: number of distinct routes by district
+
+ggplot(routes_by_district,
+aes(x = n_routes,
+y = reorder(District, n_routes))) +
+geom_segment(aes(x = 0,
+xend = n_routes,
+yend = District),
+linewidth = 0.8,
+colour = "grey70") +
+geom_point(size = 3.5,
+colour = "#2C7BB6") +
+labs(
+title = "Number of MiWay Routes by District",
+x = "Number of routes",
+y = "District"
+) +
+theme_minimal(base_size = 13)
+
+```
+
+```{r, echo=FALSE}
+coverage_summary <- counts %>%
+  left_join(routes_by_district, by = "District")
+
+ggplot(coverage_summary,
+       aes(x = n,
+           y = n_routes)) +
+  geom_point(size = 2.8, colour = "#2C7BB6") +
+  geom_smooth(method = "lm", se = TRUE, colour = "#FF9933") +
   labs(
-    title = "Number of MiWay Bus Routes by District",
-    x = "Number of MiWay Routes",
-    y = "District"
+    title = "Relationship Between Number of Stops and Routes by District",
+    x = "Number of stops in the district",
+    y = "Number of distinct routes"
   ) +
-  theme_minimal()
+  theme_minimal(base_size = 13)
+
+
+```
+```{r, echo=FALSE}
+lm_routes_stops <- lm(n_routes ~ n, data = coverage_summary)
+
+summary(lm_routes_stops)
+
+```
+```{r}
+utm_with_counts <- utm_normalized %>%
+  left_join(counts, by = "District")
+
+lm_utm_stops <- lm(utm_rate ~ n, data = utm_with_counts)
+summary(lm_utm_stops)
+
+```
+
+
+```{r}
+ggplot(utm_with_counts,
+       aes(x = n,
+           y = utm_rate)) +
+  geom_point(size = 2.8, colour = "#2C7BB6") +
+  geom_smooth(method = "lm", se = TRUE, colour = "#FF9933") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Direct UTM Access versus Number of Stops by District",
+    x = "Number of stops in the district",
+    y = "Proportion of stops serving UTM"
+  ) +
+  theme_minimal(base_size = 13)
 ```
 
 ### 2. Accessibility and Shelter Coverage
@@ -217,14 +367,26 @@ ggplot(routes_by_district, aes(x = n_routes, y = reorder(District, n_routes))) +
 Most MiWay stops are designed so people with mobility challenges can board the bus more easily. Because of this city-wide design standard, almost every district has very high accessibility rates.
 
 ```{r, echo=FALSE}
-ggplot(access_summary, aes(x = proportion, y = reorder(District, proportion))) +
-  geom_col(fill = "steelblue") +
-  labs(
-    title = "Proportion of Accessible MiWay Stops by District",
-    x = "Proportion Accessible",
-    y = "District"
-  ) +
-  theme_minimal()
+# Lollipop: accessibility by district
+
+ggplot(access_summary,
+aes(x = proportion,
+y = reorder(District, proportion))) +
+geom_segment(aes(x = 0,
+xend = proportion,
+yend = District),
+linewidth = 0.8,
+colour = "grey70") +
+geom_point(size = 3.5,
+colour = "#2C7BB6") +
+scale_x_continuous(labels = percent_format(accuracy = 1)) +
+labs(
+title = "Proportion of Accessible Stops by District",
+x = "Accessible stops (percentage)",
+y = "District"
+) +
+theme_minimal(base_size = 13)
+
 ```
 
 ```{r, echo=FALSE}
@@ -235,15 +397,26 @@ The chi-square test shows that accessibility is not evenly distributed across di
 Shelter coverage varies more widely:
 
 ```{r, echo=FALSE}
-ggplot(shelter_summary, aes(x = proportion_sheltered, 
-                            y = reorder(District, proportion_sheltered))) +
-  geom_col(fill = "#FF9933") +
-  labs(
-    title = "Proportion of MiWay Stops with Shelters by District",
-    x = "Proportion Sheltered",
-    y = "District"
-  ) +
-  theme_minimal()
+# Lollipop: shelter coverage by district
+
+ggplot(shelter_summary,
+aes(x = proportion_sheltered,
+y = reorder(District, proportion_sheltered))) +
+geom_segment(aes(x = 0,
+xend = proportion_sheltered,
+yend = District),
+linewidth = 0.8,
+colour = "grey70") +
+geom_point(size = 3.5,
+colour = "#FF9933") +
+scale_x_continuous(labels = percent_format(accuracy = 1)) +
+labs(
+title = "Proportion of Stops with Shelters by District",
+x = "Sheltered stops (percentage)",
+y = "District"
+) +
+theme_minimal(base_size = 13)
+
 ```
 
 ```{r, echo=FALSE}
@@ -251,33 +424,96 @@ chisq_shelter
 ```
 The chi-square test indicates that shelter coverage differs significantly across districts (p < 0.001). Some districts provide many more sheltered stops than others, showing that weather protection is not evenly available across the city.
 
+```{r}
+access_shelter_long <- access_summary %>%
+select(District, prop_accessible = proportion) %>%
+left_join(
+shelter_summary %>%
+select(District, prop_shelter = proportion_sheltered),
+by = "District"
+) %>%
+pivot_longer(
+cols = c(prop_accessible, prop_shelter),
+names_to = "feature",
+values_to = "value"
+) %>%
+mutate(
+feature = recode(
+feature,
+prop_accessible = "Accessible stops",
+prop_shelter    = "Sheltered stops"
+)
+)
+
+ggplot(access_shelter_long,
+aes(x = value,
+y = reorder(District, value),
+colour = feature)) +
+geom_segment(aes(x = 0,
+xend = value,
+yend = District),
+linewidth = 0.5,
+colour = "grey80",
+show.legend = FALSE) +
+geom_point(size = 2.8) +
+scale_x_continuous(labels = percent_format(accuracy = 1)) +
+labs(
+title = "Accessibility and Shelter Coverage by District",
+x = "Proportion of stops",
+y = "District",
+colour = ""
+) +
+theme_minimal(base_size = 13)
+
+```
 
 ### 3. Direct UTM Access
 
 Direct UTM routes (1, 44, 101, 110, 126) concentrate in districts along Dundas and Mississauga Road.
 
 ```{r, echo=FALSE}
-ggplot(district_utm, aes(x = utm_stops, y = reorder(District, utm_stops))) +
-  geom_col(fill = "#2C7BB6") +
-  labs(
-    title = "Number of Stops with Direct UTM Bus Routes by District",
-    x = "Direct UTM Stops",
-    y = "District"
-  ) +
-  theme_minimal()
+# Lollipop: proportion of stops serving UTM by district
+
+ggplot(utm_normalized,
+aes(x = utm_rate,
+y = reorder(District, utm_rate))) +
+geom_segment(aes(x = 0,
+xend = utm_rate,
+yend = District),
+linewidth = 0.8,
+colour = "grey70") +
+geom_point(size = 3.5,
+colour = "#2C7BB6") +
+scale_x_continuous(labels = percent_format(accuracy = 1)) +
+labs(
+title = "Proportion of Stops Serving UTM by District",
+x = "Stops with a direct UTM route (percentage)",
+y = "District"
+) +
+theme_minimal(base_size = 13)
+
 ```
 
 Normalized rates provide a fairer comparison:
 
 ```{r, echo=FALSE}
-ggplot(utm_normalized, aes(x = utm_rate, y = reorder(District, utm_rate))) +
-  geom_col(fill = "#2C7BB6") +
+# Stacked share plot: UTM vs non UTM stops
+
+ggplot(utm_share,
+       aes(x = prop,
+           y = District,
+           fill = utm_type)) +
+  geom_col() +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
   labs(
-    title = "Proportion of Bus Stops Serving UTM by District",
-    x = "Proportion of Stops with UTM Route",
-    y = "District"
+    title = "Share of Stops Serving UTM by District",
+    x = "Percentage of stops",
+    y = "District",
+    fill = ""
   ) +
-  theme_minimal()
+  theme_minimal(base_size = 13)
+
+
 ```
 
 ```{r, echo=FALSE}
@@ -290,23 +526,75 @@ The chi-square test shows a strong association between district and whether a st
 Districts near Cooksville, Port Credit, and Meadowvale GO stations have more GO-serving routes.
 
 ```{r, echo=FALSE}
-ggplot(go_by_district, aes(
-    x = distinct_go_routes,
-    y = reorder(District, distinct_go_routes)
-)) +
-  geom_col(fill = "#2C7BB6") +
-  labs(
-    title = "Number of MiWay Bus Routes Connecting to GO Stations by District",
-    x = "Distinct GO-Serving Bus Routes",
-    y = "District"
-  ) +
-  theme_minimal()
+# Lollipop: number of GO-serving routes by district
+
+ggplot(go_by_district,
+aes(x = distinct_go_routes,
+y = reorder(District, distinct_go_routes))) +
+geom_segment(aes(x = 0,
+xend = distinct_go_routes,
+yend = District),
+linewidth = 0.8,
+colour = "grey70") +
+geom_point(size = 3.5,
+colour = "#2C7BB6") +
+labs(
+title = "Number of MiWay Routes Connecting to GO Stations by District",
+x = "Distinct GO-serving routes",
+y = "District"
+) +
+theme_minimal(base_size = 13)
+
 ```
+
+```{r}
+# Stacked share plot: GO station stops vs other stops
+
+ggplot(go_share,
+       aes(x = prop,
+           y = District,
+           fill = GO_type)) +
+  geom_col() +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Share of Stops at GO Stations by District",
+    x = "Percentage of stops",
+    y = "District",
+    fill = ""
+  ) +
+  theme_minimal(base_size = 13)
+
+
+```
+
 
 ```{r, echo=FALSE}
 chisq_go
 ```
 The chi-square test finds a significant relationship between district and whether a stop is located at a GO station (p < 0.001). Only a few districts contain GO stations, so GO-connected routes are concentrated in those districts rather than being evenly distributed.
+
+### 5. Overall Transit Profile by District
+```{r}
+ggplot(district_profile_long,
+aes(x = feature,
+y = District,
+fill = value)) +
+geom_tile() +
+scale_fill_gradient(
+name   = "Proportion of stops",
+labels = percent_format(accuracy = 1)
+) +
+labs(
+title = "Transit Access Profile by District",
+x = "",
+y = "District"
+) +
+theme_minimal(base_size = 13) +
+theme(
+axis.text.x = element_text(angle = 30, hjust = 1)
+)
+
+```
 
 \newpage
 ## Conclusion
@@ -324,110 +612,178 @@ Future work could address these gaps by incorporating GTFS schedule data to stud
 
 ```{r, echo=TRUE}
 # packages
+
 library(dplyr)
 library(ggplot2)
 library(tidyr)
+library(scales)
 
 # read data
+
 df <- read.csv("./Datasets/MiWay_Bus_Stops_-4490514804018385747.csv")
 
 # clean districts
+
 df <- df %>%
-  mutate(District = trimws(District)) %>%
-  filter(District != "", District != "UNKNOWN")
+mutate(District = trimws(District)) %>%
+filter(District != "", District != "UNKNOWN")
 
 # UTM routes (MiWay routes that go to UTM)
+
 utm_routes <- c("1", "44", "101", "110", "126")
 
 # flag GO station stops
+
 df$is_GO_stop <- grepl("GO STATION", df$Stop_Description, ignore.case = TRUE)
 
 # one row per stop–route
+
 routes_long <- df %>%
-  separate_rows(Routes_Service, sep = "/") %>%
-  mutate(Routes_Service = trimws(Routes_Service)) %>%
-  filter(Routes_Service != "")
+separate_rows(Routes_Service, sep = "/") %>%
+mutate(Routes_Service = trimws(Routes_Service)) %>%
+filter(Routes_Service != "")
 
 # stop-level data: whether each stop has a UTM route
+
 stop_level <- routes_long %>%
-  group_by(Stop_Number, District) %>%
-  summarise(
-    has_utm = any(Routes_Service %in% utm_routes),
-    .groups = "drop"
-  )
+group_by(Stop_Number, District) %>%
+summarise(
+has_utm = any(Routes_Service %in% utm_routes),
+.groups = "drop"
+)
 
 # routes that touch a GO station at least once
+
 go_routes <- df %>%
-  filter(is_GO_stop) %>%
-  separate_rows(Routes_Service, sep = "/") %>%
-  mutate(Routes_Service = trimws(Routes_Service)) %>%
-  filter(Routes_Service != "") %>%
-  pull(Routes_Service) %>%
-  unique()
+filter(is_GO_stop) %>%
+separate_rows(Routes_Service, sep = "/") %>%
+mutate(Routes_Service = trimws(Routes_Service)) %>%
+filter(Routes_Service != "") %>%
+pull(Routes_Service) %>%
+unique()
 
 # summaries by district
+
 counts <- df %>%
-  group_by(District) %>%
-  summarise(n = n()) %>%
-  arrange(desc(n))
+group_by(District) %>%
+summarise(n = n()) %>%
+arrange(desc(n))
 
 access_summary <- df %>%
-  group_by(District) %>%
-  summarise(
-    accessible = sum(Accessible),
-    total      = n(),
-    proportion = accessible / total
-  ) %>%
-  arrange(desc(proportion))
+group_by(District) %>%
+summarise(
+accessible = sum(Accessible),
+total      = n(),
+proportion = accessible / total
+) %>%
+arrange(desc(proportion))
 
 shelter_summary <- df %>%
-  group_by(District) %>%
-  summarise(
-    shelters             = sum(Shelter),
-    total                = n(),
-    proportion_sheltered = shelters / total
-  ) %>%
-  arrange(desc(proportion_sheltered))
+group_by(District) %>%
+summarise(
+shelters             = sum(Shelter),
+total                = n(),
+proportion_sheltered = shelters / total
+) %>%
+arrange(desc(proportion_sheltered))
 
 routes_by_district <- routes_long %>%
-  group_by(District) %>%
-  summarise(n_routes = n_distinct(Routes_Service)) %>%
-  arrange(desc(n_routes))
+group_by(District) %>%
+summarise(n_routes = n_distinct(Routes_Service)) %>%
+arrange(desc(n_routes))
 
 utm_long <- routes_long %>%
-  filter(Routes_Service %in% utm_routes)
+filter(Routes_Service %in% utm_routes)
 
 district_utm <- utm_long %>%
-  group_by(District) %>%
-  summarise(
-    utm_stops           = n_distinct(Stop_Number),
-    utm_bus_occurrences = n(),
-    utm_distinct_routes = n_distinct(Routes_Service),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(utm_stops))
+group_by(District) %>%
+summarise(
+utm_stops           = n_distinct(Stop_Number),
+utm_bus_occurrences = n(),
+utm_distinct_routes = n_distinct(Routes_Service),
+.groups = "drop"
+) %>%
+arrange(desc(utm_stops))
 
 utm_normalized <- stop_level %>%
-  group_by(District) %>%
-  summarise(
-    total_stops = n(),
-    utm_stops   = sum(has_utm),
-    utm_rate    = utm_stops / total_stops,
-    .groups = "drop"
-  ) %>%
-  arrange(desc(utm_rate))
+group_by(District) %>%
+summarise(
+total_stops = n(),
+utm_stops   = sum(has_utm),
+utm_rate    = utm_stops / total_stops,
+.groups = "drop"
+) %>%
+arrange(desc(utm_rate))
 
 go_by_district <- routes_long %>%
-  filter(Routes_Service %in% go_routes) %>%
-  group_by(District) %>%
-  summarise(
-    distinct_go_routes = n_distinct(Routes_Service),
-    total_go_stops     = n_distinct(Stop_Number),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(distinct_go_routes))
+filter(Routes_Service %in% go_routes) %>%
+group_by(District) %>%
+summarise(
+distinct_go_routes = n_distinct(Routes_Service),
+total_go_stops     = n_distinct(Stop_Number),
+.groups = "drop"
+) %>%
+arrange(desc(distinct_go_routes))
 
-# chi-square tests
+utm_share <- stop_level %>%
+group_by(District) %>%
+summarise(
+utm      = sum(has_utm),
+non_utm  = sum(!has_utm),
+.groups  = "drop"
+) %>%
+pivot_longer(
+cols = c(utm, non_utm),
+names_to = "utm_type",
+values_to = "n"
+) %>%
+group_by(District) %>%
+mutate(prop = n / sum(n)) %>%
+ungroup() %>%
+mutate(
+utm_type = recode(
+utm_type,
+utm = "Stops serving UTM",
+non_utm = "Stops not serving UTM"
+)
+)
+
+go_share <- df %>%
+mutate(
+GO_type = if_else(is_GO_stop, "Stops at GO stations", "Other stops")
+) %>%
+group_by(District, GO_type) %>%
+summarise(n = n(), .groups = "drop") %>%
+group_by(District) %>%
+mutate(prop = n / sum(n)) %>%
+ungroup()
+
+district_profile <- df %>%
+group_by(District) %>%
+summarise(
+prop_accessible = mean(Accessible, na.rm = TRUE),
+prop_shelter    = mean(Shelter,    na.rm = TRUE),
+prop_utm        = mean(Stop_Number %in% stop_level$Stop_Number[stop_level$has_utm], na.rm = TRUE),
+prop_go         = mean(is_GO_stop, na.rm = TRUE),
+.groups = "drop"
+)
+
+district_profile_long <- district_profile %>%
+pivot_longer(
+cols = starts_with("prop_"),
+names_to = "feature",
+values_to = "value"
+) %>%
+mutate(
+feature = recode(
+feature,
+prop_accessible = "Accessible stops",
+prop_shelter    = "Sheltered stops",
+prop_utm        = "Stops serving UTM",
+prop_go         = "Stops serving GO"
+)
+)
+
 tab_access   <- table(df$District, df$Accessible)
 chisq_access <- chisq.test(tab_access)
 
@@ -439,3 +795,8 @@ chisq_utm <- chisq.test(tab_utm)
 
 tab_go   <- table(df$District, df$is_GO_stop)
 chisq_go <- chisq.test(tab_go)
+
+chisq_access
+chisq_shelter
+chisq_utm
+chisq_go
